@@ -35,29 +35,47 @@ from collections import deque
 
 def AdapTE(z, taus=None, dimEmbs=None, which=None, mode=None, surr=None, Nsurr=19):
     if taus is None:
-        taus = [1]
+        taus = np.array([1])
     if dimEmbs is None:
-        dimEmbs = [1]
+        dimEmbs = np.array([1])
+    if which is None:
+        which = np.arange(1, z.shape[0] + 1).tolist()
     if mode is None:
         mode = 'driving'
     if isinstance(z, pd.DataFrame):
         z = z.to_numpy()
 
-    pte_list = []
+    n_sources = z.shape[0]
+    n_targets = len(which)
+    n_taus = len(taus)
+    n_dimEmbs = len(dimEmbs)
+
+    pte_list = np.zeros([n_taus, n_dimEmbs, n_sources, n_targets]) * np.nan
     surr_list = []
-    for dimEmb in dimEmbs:
+    for j, dimEmb in enumerate(dimEmbs):
         print('embedding : ', dimEmb)
-        for tau in taus:
+        for i, tau in enumerate(taus):
             print('tau : ', tau)
             locals()['pte_' + str(tau)], locals()['surr_' + str(tau)] = pTE(z=z, tau=tau, dimEmb=dimEmb, which=which, mode=mode, surr=surr, Nsurr=Nsurr)
 
-            pte_list.append(locals()['pte_' + str(tau)])
+            pte_list[i, j, :, :] = locals()['pte_' + str(tau)]
             surr_list.append(locals()['surr_' + str(tau)])
 
-    adpte = np.maximum.reduce(pte_list)
+    # Get tau and dimEmbs index of maximum pTE
+    idx_taus, idx_dimEmbs = get_2d_max_idx(pte_list, n_sources, n_targets)
+    max_taus = taus[idx_taus]
+    max_dimEmbs  = dimEmbs[idx_dimEmbs]
+    adpte = pte_list.max(axis=(0, 1))
     surrogate = np.maximum.reduce(surr_list)
 
-    return adpte, surrogate
+    return adpte, surrogate, max_taus, max_dimEmbs
+
+
+def get_2d_max_idx(pte_arr, n_sources, n_targets):
+    n_taus, n_dimEmbs = pte_arr.shape[:2]
+    indices1d = pte_arr.reshape(-1, n_sources, n_targets).argmax(axis=0)
+    max_taus, max_dimEmbs = np.unravel_index(indices1d, (n_taus, n_dimEmbs))
+    return max_taus, max_dimEmbs
 
 
 def normalisa(a, order=2, axis=-1):
